@@ -33,3 +33,27 @@ pub fn get_screens() -> Vec<HMONITOR> {
 
     monitors
 }
+
+/// Gets monitor size from handle
+/// 
+/// # Arguments
+/// 
+/// * `monitor` - HMONITOR handle that represents monitor
+/// 
+pub fn get_monitor_size(monitor: HMONITOR) -> Result<(u32, u32), ()> {
+    let mut monitor_info: MONITORINFO = unsafe { std::mem::zeroed() };
+    monitor_info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+
+    // Call GetMonitorInfoW to retrieve the monitor information
+    let success = unsafe { GetMonitorInfoW(monitor, &mut monitor_info as *mut _) };
+
+    if success != FALSE {
+        // Extract the screen width and height from the monitor information
+        let width = monitor_info.rcMonitor.right - monitor_info.rcMonitor.left;
+        let height = monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top;
+        Ok((width as u32, height as u32))
+    } else {
+        println!("{:?}", success);
+        Err(()) // Handle error if GetMonitorInfoW fails
+    }
+}
