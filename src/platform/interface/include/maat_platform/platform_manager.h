@@ -15,7 +15,7 @@ class Monitor;
 } 
 
 
-namespace maat::platform {
+namespace maat { namespace platform {
 
 class PlatformManager {
 public:
@@ -98,6 +98,6 @@ public:
 
 };
 
-} 
+} } 
 
 #endif 

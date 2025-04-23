@@ -3,7 +3,7 @@
 
 #include "platform_types.h"
 
-namespace maat::platform {
+namespace maat { namespace platform {
 
 class Monitor {
 public:
@@ -13,6 +13,6 @@ public:
     virtual Rect getWorkArea() const = 0;
 };
 
-}
+} }
 
 #endif

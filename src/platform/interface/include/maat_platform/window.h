@@ -3,7 +3,7 @@
 
 #include "platform_types.h"
 
-namespace maat::platform {
+namespace maat { namespace platform {
 
 class Window {
 public:
@@ -14,6 +14,6 @@ public:
     virtual bool isManageable() const = 0;
 };
 
-}
+} }
 
 #endif
