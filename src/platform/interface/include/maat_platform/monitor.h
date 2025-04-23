@@ -1,6 +1,18 @@
-#ifndef MAAT_PLATFORM_MONITOR_H
-#define MAAT_PLATFORM_MONITOR_H
+#ifndef MAAT_PLATFORM_MONITOR_H_
+#define MAAT_PLATFORM_MONITOR_H_
 
-// Placeholder for platform-agnostic monitor interface
+#include "platform_types.h"
 
-#endif // MAAT_PLATFORM_MONITOR_H
+namespace maat::platform {
+
+class Monitor {
+public:
+    virtual ~Monitor() = default;
+
+    virtual MonitorId getId() const = 0;
+    virtual Rect getWorkArea() const = 0;
+};
+
+}
+
+#endif
