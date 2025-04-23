@@ -1,6 +1,20 @@
-#ifndef MAAT_PLATFORM_PLATFORM_TYPES_H
-#define MAAT_PLATFORM_PLATFORM_TYPES_H
+#ifndef MAAT_PLATFORM_PLATFORM_TYPES_H_
+#define MAAT_PLATFORM_PLATFORM_TYPES_H_
 
-// Placeholder for platform-agnostic types
+#include <cstdint>
 
-#endif // MAAT_PLATFORM_PLATFORM_TYPES_H
+namespace maat::platform {
+
+struct Rect {
+    int x;
+    int y;
+    int width;
+    int height;
+};
+
+typedef uintptr_t WindowId;
+typedef uintptr_t MonitorId;
+
+}
+
+#endif
