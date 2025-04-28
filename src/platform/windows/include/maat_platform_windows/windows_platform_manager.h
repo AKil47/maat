@@ -3,6 +3,12 @@
 
 // Prevent inclusion of min/max macros
 #define NOMINMAX
+
+// Define Windows version to Vista or higher to get access to EVENT_SYSTEM_DISPLAYCHANGE
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
+
 #include <windows.h>
 
 #include <vector>
@@ -49,11 +55,21 @@ public:
     void stopEventLoop() override;
 
 private:
+    friend LRESULT CALLBACK HelperWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    friend BOOL CALLBACK StaticMonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData);
+    friend BOOL CALLBACK StaticWindowEnumProc(HWND hwnd, LPARAM lParam);
+    friend void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd, LONG idObject, LONG idChild, DWORD dwEventThread, DWORD dwmsEventTime);
+
     // --- Internal Helper Methods ---
     void clearMonitors();
     void clearWindows();
     void registerEventHooks();
     void unregisterEventHooks();
+
+    // Helper window management
+    bool registerHelperWindowClass();
+    bool createHelperWindow();
+    void destroyHelperWindow();
 
     // --- Event Handling ---
     // Non-static member function to handle events forwarded by the static proc
@@ -63,6 +79,7 @@ private:
     static BOOL CALLBACK StaticMonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData);
     static BOOL CALLBACK StaticWindowEnumProc(HWND hwnd, LPARAM lParam);
     static void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd, LONG idObject, LONG idChild, DWORD dwEventThread, DWORD dwmsEventTime);
+    static LRESULT CALLBACK HelperWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
     // --- Member Variables ---
 
@@ -86,10 +103,14 @@ private:
     HWINEVENTHOOK m_hHookMoveSize = nullptr;
     HWINEVENTHOOK m_hHookDisplayChange = nullptr; // Changed from MonitorChange based on thinking process
 
+    // Helper window handle
+    HWND m_hHelperWindow = nullptr;
+
     // Static map to associate hook handles with instances
     // Protected by s_hookMapMutex
     static std::map<HWINEVENTHOOK, WindowsPlatformManager*> s_hookMap;
     static std::mutex s_hookMapMutex;
+    static const wchar_t* const kHelperWindowClassName;
 };
 
 } // namespace maat::platform

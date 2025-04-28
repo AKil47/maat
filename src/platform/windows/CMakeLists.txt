@@ -19,3 +19,7 @@ target_link_libraries(maat_platform_windows PUBLIC maat_platform_interface)
 # Add Windows-specific libraries
 # Note: WIN32 is always defined on Windows, even for 64-bit builds
 target_link_libraries(maat_platform_windows PRIVATE User32 Gdi32) # Example libraries
+
+# Define the minimum Windows version needed for the target
+# 0x0600 corresponds to Windows Vista
+target_compile_definitions(maat_platform_windows PRIVATE _WIN32_WINNT=0x0600)
