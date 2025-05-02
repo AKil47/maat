@@ -13,6 +13,7 @@
 
 #include <vector>
 #include <map>
+#include <set>
 #include <utility>
 #include <functional>
 #include <memory>
@@ -86,6 +87,7 @@ private:
     // Ownership maps: The manager owns these objects.
     std::map<MonitorId, WindowsMonitor*> m_monitors;
     std::map<WindowId, WindowsWindow*> m_windows;
+    std::set<WindowId> m_reportedCreatedWindows;
 
     // Callback storage
     std::function<void(Window*)> m_windowCreatedCallback;
@@ -101,7 +103,8 @@ private:
     HWINEVENTHOOK m_hHookCreate = nullptr;
     HWINEVENTHOOK m_hHookDestroy = nullptr;
     HWINEVENTHOOK m_hHookMoveSize = nullptr;
-    HWINEVENTHOOK m_hHookDisplayChange = nullptr; // Changed from MonitorChange based on thinking process
+    HWINEVENTHOOK m_hHookShow = nullptr;
+    HWINEVENTHOOK m_hHookDisplayChange = nullptr;
 
     // Helper window handle
     HWND m_hHelperWindow = nullptr;

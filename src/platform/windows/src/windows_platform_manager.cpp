@@ -27,6 +27,7 @@
 #include <algorithm> // For std::transform if needed later
 #include <mutex> // Include mutex header
 #include <iostream> // For potential error logging
+#include <set> // Ensure set is included here too if not pulled by header
 
 namespace maat::platform {
 
@@ -154,52 +155,79 @@ LRESULT CALLBACK WindowsPlatformManager::HelperWndProc(HWND hwnd, UINT uMsg, WPA
 // --- Non-Static Event Handler ---
 
 void WindowsPlatformManager::HandleWindowEvent(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd, LONG idObject, LONG idChild, DWORD dwEventThread, DWORD dwmsEventTime) {
-    // Filter out events that are not for top-level windows
+    // Filter out events that are not for top-level windows or display changes
     if (idObject != OBJID_WINDOW || idChild != CHILDID_SELF || !hwnd) {
-         // For DISPLAYCHANGE, hwnd might be NULL. Handle specific cases.
-         if(event != EVENT_SYSTEM_DISPLAYCHANGE) {
+         if(event != EVENT_SYSTEM_DISPLAYCHANGE) { // Allow display change with NULL hwnd
             return;
          }
+    }
+
+    // Allow NULL hwnd only for display change event
+    if (!hwnd && event != EVENT_SYSTEM_DISPLAYCHANGE) {
+        return;
     }
 
     WindowId windowId = reinterpret_cast<WindowId>(hwnd);
 
     switch (event) {
         case EVENT_OBJECT_CREATE: {
-            // Check if window handle is valid and not already tracked
-            if (IsWindow(hwnd)) { // Check validity here
-                 // Avoid double-adding if EnumWindows race condition or similar occurs
+            // Check if window handle is valid
+            if (IsWindow(hwnd)) {
+                 // Add to tracking map if not already present.
+                 // Defer isManageable check and callback to EVENT_OBJECT_SHOW.
+                 std::lock_guard<std::mutex> lock(s_hookMapMutex); // Protect m_windows access potentially? If called from multiple threads? Assume WinEventProc serializes for now. Revisit if needed.
                  if (m_windows.find(windowId) == m_windows.end()) {
-                    auto* tempWindow = new WindowsWindow(hwnd);
-                    if (tempWindow->isManageable()) {
-                        m_windows[windowId] = tempWindow; // Add to tracked windows
-                        if (m_windowCreatedCallback) {
-                            m_windowCreatedCallback(tempWindow); // Notify core
-                        }
-                    } else {
-                        delete tempWindow; // Not manageable, discard immediately
-                    }
+                    // Just create and store. The SHOW event will handle the rest.
+                    m_windows[windowId] = new WindowsWindow(hwnd);
+                    // std::cout << "DEBUG: EVENT_OBJECT_CREATE tracked HWND: " << hwnd << std::endl; // Optional debug
                  }
+            }
+            break;
+        }
+
+        case EVENT_OBJECT_SHOW: {
+            // Window is being shown. Now check if it's manageable and if we haven't reported it yet.
+            std::lock_guard<std::mutex> lock(s_hookMapMutex); // Protect map and set access
+            auto it = m_windows.find(windowId);
+            // Check if we are tracking it AND haven't reported it yet
+            if (it != m_windows.end() && m_reportedCreatedWindows.find(windowId) == m_reportedCreatedWindows.end()) {
+                WindowsWindow* window = it->second;
+                if (window && window->isManageable()) {
+                    // It's manageable and not reported, report it now.
+                    m_reportedCreatedWindows.insert(windowId); // Mark as reported
+                    if (m_windowCreatedCallback) {
+                         // std::cout << "DEBUG: EVENT_OBJECT_SHOW calling create callback for HWND: " << hwnd << std::endl; // Optional debug
+                        m_windowCreatedCallback(window); // Notify core
+                    }
+                }
+                // If it's not manageable at this point, we just leave it in m_windows.
+                // It might become manageable later, or it might be irrelevant.
+                // The core logic using the PlatformManager should decide what to do with non-manageable windows later if needed.
             }
             break;
         }
 
         case EVENT_OBJECT_DESTROY: {
              // Check if we were tracking this window
-            auto it = m_windows.find(windowId);
-            if (it != m_windows.end()) {
-                // We were tracking it. Notify the core logic.
-                // The core logic MUST call releaseWindowTracking later.
-                if (m_windowDestroyedCallback) {
-                    m_windowDestroyedCallback(windowId);
-                }
-                // DO NOT delete it->second here. Deletion happens in releaseWindowTracking.
-                // DO NOT remove from map here, wait for releaseWindowTracking.
-            }
-            break;
-        }
+             std::lock_guard<std::mutex> lock(s_hookMapMutex); // Protect map/set access
+             auto it = m_windows.find(windowId);
+             if (it != m_windows.end()) {
+                 // We were tracking it. Notify the core logic.
+                 // The core logic MUST call releaseWindowTracking later.
+                 if (m_windowDestroyedCallback) {
+                     m_windowDestroyedCallback(windowId);
+                 }
+                 // DO NOT delete it->second here. Deletion happens in releaseWindowTracking.
+                 // DO NOT remove from map here, wait for releaseWindowTracking.
+                 // DO remove from the reported set now, as it's destroyed.
+                 m_reportedCreatedWindows.erase(windowId);
+             }
+             break;
+         }
 
         case EVENT_SYSTEM_MOVESIZEEND: {
+            // Lock might not be strictly necessary if map isn't changing, but safer
+            std::lock_guard<std::mutex> lock(s_hookMapMutex);
             auto it = m_windows.find(windowId);
             if (it != m_windows.end()) {
                  // Check if window is still valid before getting monitor
@@ -207,8 +235,6 @@ void WindowsPlatformManager::HandleWindowEvent(HWINEVENTHOOK hWinEventHook, DWOR
                     HMONITOR hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                     if (hMonitor && m_windowMonitorChangedCallback) {
                          MonitorId monitorId = reinterpret_cast<MonitorId>(hMonitor);
-                         // TODO: Potentially compare with a stored previous monitor ID
-                         //       to avoid redundant callbacks if the monitor didn't actually change.
                          m_windowMonitorChangedCallback(windowId, monitorId);
                     }
                  }
@@ -216,7 +242,9 @@ void WindowsPlatformManager::HandleWindowEvent(HWINEVENTHOOK hWinEventHook, DWOR
             break;
         }
 
-        // Add other event cases if needed (e.g., EVENT_OBJECT_NAMECHANGE)
+        // Handle EVENT_SYSTEM_DISPLAYCHANGE via WM_DISPLAYCHANGE in HelperWndProc
+
+        // Add other event cases if needed
     }
 }
 
@@ -234,16 +262,41 @@ std::vector<Monitor*> WindowsPlatformManager::enumerateMonitors() {
 }
 
 std::vector<Window*> WindowsPlatformManager::enumerateInitialWindows() {
-    // Clear potentially stale window list from previous runs or calls
+    // Clear potentially stale window list and reported set
     clearWindows();
+    {
+        std::lock_guard<std::mutex> lock(s_hookMapMutex);
+        m_reportedCreatedWindows.clear();
+    }
+
     EnumWindows(StaticWindowEnumProc, reinterpret_cast<LPARAM>(this));
     std::vector<Window*> result;
     result.reserve(m_windows.size());
+
+    // Populate the initial list and also the reported set for manageable ones
+    std::lock_guard<std::mutex> lock(s_hookMapMutex); // Protect map/set access
+    std::vector<WindowId> to_remove; // Windows failing initial check
     for (auto const& [id, window_ptr] : m_windows) {
-        // Note: We return all enumerated windows here.
-        // The core logic is responsible for filtering using isManageable().
-        result.push_back(window_ptr);
+        if (window_ptr && window_ptr->isManageable()) {
+             result.push_back(window_ptr);
+             m_reportedCreatedWindows.insert(id); // Mark initially manageable ones as reported
+        } else if (window_ptr) {
+            // Optional: Decide if non-manageable windows found during initial enum
+            // should be kept in m_windows or removed immediately.
+            // Let's remove them for simplicity now.
+            to_remove.push_back(id);
+            delete window_ptr; // Delete the object
+        } else {
+            // Should not happen, but handle null pointer case
+             to_remove.push_back(id);
+        }
     }
+
+    // Remove non-manageable windows discovered during initial enumeration
+    for(const auto& id : to_remove) {
+        m_windows.erase(id);
+    }
+
     return result;
 }
 
@@ -297,10 +350,12 @@ void WindowsPlatformManager::setMonitorLayoutChangedCallback(std::function<void(
 }
 
 void WindowsPlatformManager::releaseWindowTracking(WindowId id) {
+    std::lock_guard<std::mutex> lock(s_hookMapMutex); // Protect map/set access
     auto it = m_windows.find(id);
     if (it != m_windows.end()) {
         delete it->second;    // Delete the owned WindowsWindow object
         m_windows.erase(it); // Remove the entry from the map
+        m_reportedCreatedWindows.erase(id); // Also remove from reported set
     }
 }
 
@@ -359,34 +414,44 @@ void WindowsPlatformManager::registerEventHooks() {
 
     DWORD targetThreadId = 0;
     DWORD targetProcessId = 0;
+    // WINEVENT_OUTOFCONTEXT is essential for system-wide hooks
+    // WINEVENT_SKIPOWNPROCESS prevents getting events for the helper window itself etc.
     UINT flags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
 
+    // Hook for window creation (fires early)
     m_hHookCreate = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_CREATE, NULL, WinEventProc, targetProcessId, targetThreadId, flags);
+    // Hook for window becoming visible (better time to check properties)
+    m_hHookShow = SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_SHOW, NULL, WinEventProc, targetProcessId, targetThreadId, flags);
+    // Hook for window destruction
     m_hHookDestroy = SetWinEventHook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_DESTROY, NULL, WinEventProc, targetProcessId, targetThreadId, flags);
+    // Hook for window finishing move/size operation
     m_hHookMoveSize = SetWinEventHook(EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZEEND, NULL, WinEventProc, targetProcessId, targetThreadId, flags);
+    // Note: Display change is handled by WM_DISPLAYCHANGE on the helper window
 
-    // Update Static Map
+    // Update Static Map (Protected Access)
     std::lock_guard<std::mutex> lock(s_hookMapMutex);
-    if (m_hHookCreate) s_hookMap[m_hHookCreate] = this; else { /* Log */ }
-    if (m_hHookDestroy) s_hookMap[m_hHookDestroy] = this; else { /* Log */ }
-    if (m_hHookMoveSize) s_hookMap[m_hHookMoveSize] = this; else { /* Log */ }
+    if (m_hHookCreate) s_hookMap[m_hHookCreate] = this; else { /* Log Error */ }
+    if (m_hHookShow) s_hookMap[m_hHookShow] = this; else { /* Log Error */ } // Add SHOW hook
+    if (m_hHookDestroy) s_hookMap[m_hHookDestroy] = this; else { /* Log Error */ }
+    if (m_hHookMoveSize) s_hookMap[m_hHookMoveSize] = this; else { /* Log Error */ }
 }
 
 void WindowsPlatformManager::unregisterEventHooks() {
     // Store handles locally before clearing members
     HWINEVENTHOOK hooksToUnregister[] = {
-        m_hHookCreate, m_hHookDestroy, m_hHookMoveSize
+        m_hHookCreate, m_hHookShow, m_hHookDestroy, m_hHookMoveSize // Add SHOW hook
+        // Don't unregister display change hook here, it's tied to window message
     };
 
     // Clear member handles immediately
-    m_hHookCreate = m_hHookDestroy = m_hHookMoveSize = nullptr;
+    m_hHookCreate = m_hHookShow = m_hHookDestroy = m_hHookMoveSize = nullptr; // Add SHOW hook
 
     // --- Remove from Static Map & Unhook (Mutex Protected Map Access) ---
-    { // Scope for mutex lock
+    {
          std::lock_guard<std::mutex> lock(s_hookMapMutex);
          for (HWINEVENTHOOK hHook : hooksToUnregister) {
             if (hHook) {
-                s_hookMap.erase(hHook); // Remove from map first
+                s_hookMap.erase(hHook);
             }
          }
     } // Mutex released
