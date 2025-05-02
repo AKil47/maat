@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace maat::platform {
+namespace maat { namespace platform {
 
 struct Rect {
     int x;
@@ -15,6 +15,6 @@ struct Rect {
 typedef uintptr_t WindowId;
 typedef uintptr_t MonitorId;
 
-}
+} }
 
 #endif
