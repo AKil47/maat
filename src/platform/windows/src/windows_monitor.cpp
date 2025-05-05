@@ -1,9 +1,5 @@
 #include "maat_platform_windows/windows_monitor.h"
 
-// Ensure NOMINMAX is defined if not included via header (defensive)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #include <windows.h>
 #include <stdexcept> // For potential future error handling
 

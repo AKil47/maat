@@ -1,25 +1,12 @@
 #include "maat_platform_windows/windows_platform_manager.h"
+#include <maat_core/maat_mediator.h>
 
 #include "maat_platform_windows/windows_window.h"
 #include "maat_platform_windows/windows_monitor.h"
 
-// Ensure NOMINMAX is defined if not included via header
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-
-// Define Windows version (still good practice)
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
-
 #include <windows.h>
 #include <winuser.h>
 
-// Define EVENT_SYSTEM_DISPLAYCHANGE if not defined
-#ifndef EVENT_SYSTEM_DISPLAYCHANGE
-#define EVENT_SYSTEM_DISPLAYCHANGE 0x000D
-#endif
 
 #include <vector>
 #include <map>
@@ -38,7 +25,8 @@ const wchar_t* const WindowsPlatformManager::kHelperWindowClassName = L"MaatPlat
 
 // --- Constructor & Destructor ---
 
-WindowsPlatformManager::WindowsPlatformManager() :
+WindowsPlatformManager::WindowsPlatformManager(maat::core::MaatMediator& mediator) :
+    m_mediator(mediator),
     m_eventLoopThreadId(0),
     m_stopEventLoop(false),
     m_hHookCreate(nullptr),
@@ -131,11 +119,9 @@ LRESULT CALLBACK WindowsPlatformManager::HelperWndProc(HWND hwnd, UINT uMsg, WPA
 
     if (pThis) {
         switch (uMsg) {
-            case WM_DISPLAYCHANGE:
-                // Display settings changed, notify the manager
-                if (pThis->m_monitorLayoutChangedCallback) {
-                    pThis->m_monitorLayoutChangedCallback();
-                }
+case WM_DISPLAYCHANGE:
+                // Display settings changed, notify via mediator
+                pThis->m_mediator.notifyOsMonitorLayoutChanged();
                 return 0; // Indicate message was handled
 
             // Handle other messages if needed (e.g., WM_DESTROY)
@@ -155,17 +141,11 @@ LRESULT CALLBACK WindowsPlatformManager::HelperWndProc(HWND hwnd, UINT uMsg, WPA
 // --- Non-Static Event Handler ---
 
 void WindowsPlatformManager::HandleWindowEvent(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd, LONG idObject, LONG idChild, DWORD dwEventThread, DWORD dwmsEventTime) {
-    // Filter out events that are not for top-level windows or display changes
+    // Filter out events that are not for top-level windows
     if (idObject != OBJID_WINDOW || idChild != CHILDID_SELF || !hwnd) {
-         if(event != EVENT_SYSTEM_DISPLAYCHANGE) { // Allow display change with NULL hwnd
-            return;
-         }
-    }
-
-    // Allow NULL hwnd only for display change event
-    if (!hwnd && event != EVENT_SYSTEM_DISPLAYCHANGE) {
         return;
     }
+
 
     WindowId windowId = reinterpret_cast<WindowId>(hwnd);
 
@@ -195,10 +175,7 @@ void WindowsPlatformManager::HandleWindowEvent(HWINEVENTHOOK hWinEventHook, DWOR
                 if (window && window->isManageable()) {
                     // It's manageable and not reported, report it now.
                     m_reportedCreatedWindows.insert(windowId); // Mark as reported
-                    if (m_windowCreatedCallback) {
-                         // std::cout << "DEBUG: EVENT_OBJECT_SHOW calling create callback for HWND: " << hwnd << std::endl; // Optional debug
-                        m_windowCreatedCallback(window); // Notify core
-                    }
+                    m_mediator.notifyOsWindowCreated(window);
                 }
                 // If it's not manageable at this point, we just leave it in m_windows.
                 // It might become manageable later, or it might be irrelevant.
@@ -214,9 +191,7 @@ void WindowsPlatformManager::HandleWindowEvent(HWINEVENTHOOK hWinEventHook, DWOR
              if (it != m_windows.end()) {
                  // We were tracking it. Notify the core logic.
                  // The core logic MUST call releaseWindowTracking later.
-                 if (m_windowDestroyedCallback) {
-                     m_windowDestroyedCallback(windowId);
-                 }
+                 m_mediator.notifyOsWindowDestroyed(windowId);
                  // DO NOT delete it->second here. Deletion happens in releaseWindowTracking.
                  // DO NOT remove from map here, wait for releaseWindowTracking.
                  // DO remove from the reported set now, as it's destroyed.
@@ -233,9 +208,9 @@ void WindowsPlatformManager::HandleWindowEvent(HWINEVENTHOOK hWinEventHook, DWOR
                  // Check if window is still valid before getting monitor
                  if (IsWindow(hwnd)) {
                     HMONITOR hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-                    if (hMonitor && m_windowMonitorChangedCallback) {
+                    if (hMonitor) {
                          MonitorId monitorId = reinterpret_cast<MonitorId>(hMonitor);
-                         m_windowMonitorChangedCallback(windowId, monitorId);
+                         m_mediator.notifyOsWindowMonitorChanged(windowId, monitorId);
                     }
                  }
             }
@@ -333,21 +308,9 @@ void WindowsPlatformManager::applyWindowGeometries(const std::vector<std::pair<W
     EndDeferWindowPos(currentHdwp);
 }
 
-void WindowsPlatformManager::setWindowCreatedCallback(std::function<void(Window*)> cb) {
-    m_windowCreatedCallback = std::move(cb);
-}
 
-void WindowsPlatformManager::setWindowDestroyedCallback(std::function<void(WindowId)> cb) {
-    m_windowDestroyedCallback = std::move(cb);
-}
 
-void WindowsPlatformManager::setWindowMonitorChangedCallback(std::function<void(WindowId, MonitorId)> cb) {
-    m_windowMonitorChangedCallback = std::move(cb);
-}
 
-void WindowsPlatformManager::setMonitorLayoutChangedCallback(std::function<void()> cb) {
-    m_monitorLayoutChangedCallback = std::move(cb);
-}
 
 void WindowsPlatformManager::releaseWindowTracking(WindowId id) {
     std::lock_guard<std::mutex> lock(s_hookMapMutex); // Protect map/set access
