@@ -1,6 +1,18 @@
 #ifndef MAAT_CORE_CORE_MANAGER_H
 #define MAAT_CORE_CORE_MANAGER_H
 
-// Placeholder for core manager class
+#include <iostream>
+
+namespace maat {
+namespace core {
+
+class CoreManager {
+public:
+    CoreManager();
+    ~CoreManager();
+};
+
+} // namespace core
+} // namespace maat
 
 #endif // MAAT_CORE_CORE_MANAGER_H

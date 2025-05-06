@@ -6,11 +6,12 @@ target_sources(maat_platform_windows PRIVATE
     src/windows_monitor.cpp
 )
 
-target_include_directories(maat_platform_windows PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-   PRIVATE
-    # Add private include paths if needed later
+target_include_directories(maat_platform_windows
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src/core/include>
 )
 
 # Windows implementation needs the platform interface definitions

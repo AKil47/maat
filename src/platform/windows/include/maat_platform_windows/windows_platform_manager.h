@@ -5,9 +5,9 @@
 #define NOMINMAX
 
 // Define Windows version to Vista or higher to get access to EVENT_SYSTEM_DISPLAYCHANGE
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
+/*#ifndef _WIN32_WINNT*/
+/*#define _WIN32_WINNT 0x0600*/
+/*#endif*/
 
 #include <windows.h>
 
@@ -22,6 +22,8 @@
 #include "maat_platform/platform_manager.h"
 #include "maat_platform/platform_types.h"
 
+namespace maat { namespace core { class MaatMediator; } }
+
 // Forward declarations instead of including full headers here
 namespace maat { namespace platform {
 class WindowsWindow;
@@ -32,7 +34,7 @@ namespace maat::platform {
 
 class WindowsPlatformManager final : public PlatformManager {
 public:
-    WindowsPlatformManager();
+    explicit WindowsPlatformManager(maat::core::MaatMediator& mediator);
     ~WindowsPlatformManager() override;
 
     // Prevent copy and assignment
@@ -45,10 +47,6 @@ public:
     std::vector<Monitor*> enumerateMonitors() override;
     std::vector<Window*> enumerateInitialWindows() override;
 
-    void setWindowCreatedCallback(std::function<void(Window*)> cb) override;
-    void setWindowDestroyedCallback(std::function<void(WindowId)> cb) override;
-    void setWindowMonitorChangedCallback(std::function<void(WindowId, MonitorId)> cb) override;
-    void setMonitorLayoutChangedCallback(std::function<void()> cb) override;
 
     void releaseWindowTracking(WindowId id) override;
 
@@ -89,11 +87,8 @@ private:
     std::map<WindowId, WindowsWindow*> m_windows;
     std::set<WindowId> m_reportedCreatedWindows;
 
-    // Callback storage
-    std::function<void(Window*)> m_windowCreatedCallback;
-    std::function<void(WindowId)> m_windowDestroyedCallback;
-    std::function<void(WindowId, MonitorId)> m_windowMonitorChangedCallback;
-    std::function<void()> m_monitorLayoutChangedCallback;
+    // Mediator reference
+    maat::core::MaatMediator& m_mediator;
 
     // Event loop control (basic example)
     DWORD m_eventLoopThreadId = 0;

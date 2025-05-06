@@ -47,29 +47,6 @@ public:
     virtual std::vector<Window*> enumerateInitialWindows() = 0;
 
 
-    /**
-     * @brief Sets the callback function to be invoked when a new window is detected.
-     * @param cb Function taking a non-owning Window pointer (owned by PlatformManager).
-     */
-    virtual void setWindowCreatedCallback(std::function<void(Window*)> cb) = 0;
-
-    /**
-     * @brief Sets the callback function to be invoked when a tracked window is destroyed.
-     * @param cb Function taking the WindowId of the destroyed window.
-     */
-    virtual void setWindowDestroyedCallback(std::function<void(WindowId)> cb) = 0;
-
-    /**
-     * @brief Sets the callback function for when a tracked window changes monitor significantly.
-     * @param cb Function taking the WindowId and the likely new MonitorId.
-     */
-    virtual void setWindowMonitorChangedCallback(std::function<void(WindowId, MonitorId)> cb) = 0;
-
-    /**
-     * @brief Sets the callback function for when monitor layout/configuration changes.
-     * @param cb Function to be invoked. Core should re-enumerate monitors upon receiving this.
-     */
-    virtual void setMonitorLayoutChangedCallback(std::function<void()> cb) = 0;
 
 
     /**
@@ -100,4 +77,4 @@ public:
 
 } } 
 
-#endif 
+#endif
